@@ -102,10 +102,19 @@ pio device monitor -b 115200
 
 ```
 BetterESP8266devices/
-  src/
-    main.cpp          # 主固件源码
-  platformio.ini      # PlatformIO 构建配置
-  .gitignore          # Git 忽略规则
+├── src/
+│   ├── config.h          # 硬件常量、EEPROM 布局、全局状态声明
+│   ├── serial_utils.h    # 串口输入工具（行读取、缓冲区清除）
+│   ├── eeprom_store.h    # EEPROM 持久化读写（WiFi + MQTT 配置）
+│   ├── wifi_manager.h    # WiFi 扫描/连接/自动重连/芯片信息
+│   ├── mqtt_manager.h    # MQTT 连接/发布/订阅/DNS 降级
+│   ├── menu.h            # 启动菜单/运行时快捷键/完全复位
+│   ├── bridge.h          # STM32 串口桥接协议 (>>PUB/SUB/INFO)
+│   └── main.cpp          # 入口：setup() + loop() + 全局变量定义
+├── platformio.ini         # PlatformIO 构建配置
+├── .gitignore             # Git 忽略规则
+├── README.md              # 本文档
+└── LICENSE                # MIT 许可证
 ```
 
 ## 依赖
