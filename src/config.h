@@ -30,7 +30,7 @@ namespace EepromAddr {
     constexpr uint16_t SSID        = 4;     // WiFi SSID (32 字节)
     constexpr uint16_t PASS        = 36;    // WiFi 密码 (64 字节)
     constexpr uint16_t MQTT_SERVER = 100;   // MQTT 服务器地址 (39 字节)
-    constexpr uint16_t MQTT_PORT   = 116;  // MQTT 端口 (uint16_t)
+    constexpr uint16_t MQTT_PORT   = 140;  // MQTT 端口, 0x8C (uint16_t)
 }
 
 #define EEPROM_TOTAL_SIZE   512
