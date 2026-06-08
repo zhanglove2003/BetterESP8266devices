@@ -92,7 +92,23 @@ inline void eeprom_load_mqtt() {
     }
     g_mqtt_server[MAX_HOST_LEN] = '\0';
 
-    // 校验：首字节无效则恢复默认
+    // 移除服务器地址中的端口号（用户可能误输入 host:port 格式）
+    char *colon = strchr(g_mqtt_server, ':');
+    if (colon) *colon = '\0';
+
+    // 加载用户名/Token
+    for (int i = 0; i < MAX_MQTT_USER_LEN; i++) {
+        char c = EEPROM.read(EepromAddr::MQTT_USER + i);
+        g_mqtt_user[i] = (c >= 32 && c < 127) ? c : '\0';
+    }
+    g_mqtt_user[MAX_MQTT_USER_LEN] = '\0';
+
+    // 校验：用户名首字节无效则恢复编译时默认（首次启动/全新 EEPROM）
+    if (g_mqtt_user[0] == '\0' || g_mqtt_user[0] == 0xFF) {
+        strncpy(g_mqtt_user, DEFAULT_MQTT_USER, MAX_MQTT_USER_LEN);
+    }
+
+    // 校验：服务器首字节无效则恢复默认
     if (g_mqtt_server[0] == '\0' || g_mqtt_server[0] == 0xFF) {
         strncpy(g_mqtt_server, DEFAULT_MQTT_SERVER, MAX_HOST_LEN);
     }
@@ -107,6 +123,8 @@ inline void eeprom_save_mqtt() {
     for (int i = 0; i < MAX_HOST_LEN; i++)
         EEPROM.write(EepromAddr::MQTT_SERVER + i, g_mqtt_server[i]);
     EEPROM.put(EepromAddr::MQTT_PORT, g_mqtt_port);
+    for (int i = 0; i < MAX_MQTT_USER_LEN; i++)
+        EEPROM.write(EepromAddr::MQTT_USER + i, g_mqtt_user[i]);
     EEPROM.commit();
 }
 
