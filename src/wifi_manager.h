@@ -33,12 +33,12 @@ inline void print_chip_info() {
 }
 
 /**
- * 扫描周围 WiFi 网络并让用户选择连接
- *
- * 交互流程：列出网络 → 用户选择 → 输入密码 → 连接 → 稳定性验证
- * 连接成功后自动保存凭据到 EEPROM
+ * WiFi 扫描流程（扫描 → 选择网络 → 输入密码 → 连接 → 保存）
+ * 支持在密码输入时按 q 回退到重新扫描
+ * 最多 3 次密码尝试，3 次失败后自动回退到扫描
  */
 inline void wifi_scan_and_connect() {
+scan_start:
     Serial.println(F(">>> 扫描 WiFi..."));
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
@@ -94,57 +94,88 @@ scan_pick:
     Serial.printf("已选择: %s\n", ssid.c_str());
     WiFi.scanDelete();
 
-    String pass;
-    if (!is_open) {
-        Serial.print(F("输入密码 > "));
-        char pw[MAX_PASS_LEN + 1] = {0};
-        serial_read_line(pw, MAX_PASS_LEN + 1, 60000);
-        if (pw[0] == '\0') Serial.println(F("(空密码)"));
-        pass = pw;
-    } else {
-        pass = "";
-        Serial.println(F("开放网络"));
+    // 最多 3 次尝试输入密码并连接
+    for (int attempt = 1; attempt <= 3; attempt++) {
+        String pass;
+        if (!is_open) {
+            if (attempt > 1) {
+                Serial.printf("[重试 %d/3] ", attempt);
+            }
+            Serial.print(F("输入密码 (q=重选网络, m=主菜单) > "));
+            serial_flush_input();
+            char pw[MAX_PASS_LEN + 1] = {0};
+            serial_read_line(pw, MAX_PASS_LEN + 1, 60000);
+            // m/M 回退到主菜单
+            if (pw[0] == 'm' || pw[0] == 'M') {
+                Serial.println(F("[返回] 主菜单\n"));
+                WiFi.disconnect();
+                delay(500);
+                return;
+            }
+            // q/Q 回退到重新扫描
+            if (pw[0] == 'q' || pw[0] == 'Q') {
+                Serial.println(F("[返回] 重新扫描\n"));
+                WiFi.disconnect();
+                delay(500);
+                goto scan_start;
+            }
+            if (pw[0] == '\0') {
+                Serial.println(F("(空密码)"));
+                pass = "";
+            } else {
+                pass = pw;
+            }
+        } else {
+            pass = "";
+            Serial.println(F("开放网络"));
+        }
+
+        Serial.printf("正在连接 \"%s\" ...\n", ssid.c_str());
+
+        // 关键修复：禁用 WiFi 睡眠，防止 7 秒断连
+        WiFi.setSleepMode(WIFI_NONE_SLEEP);
+        WiFi.setAutoReconnect(true);
+        WiFi.begin(ssid.c_str(), pass.c_str());
+
+        uint32_t conn_start = millis();
+        while (WiFi.status() != WL_CONNECTED && millis() - conn_start < WIFI_CONNECT_TIMEOUT_MS) {
+            delay(200);
+            yield();
+        }
+
+        if (WiFi.status() == WL_CONNECTED) {
+            // 连接稳定性验证（5 秒内保持连接）
+            uint32_t stable = millis();
+            bool ok = true;
+            while (millis() - stable < WIFI_STABLE_CHECK_MS) {
+                if (WiFi.status() != WL_CONNECTED) { ok = false; break; }
+                delay(200);
+            }
+            if (ok) {
+                Serial.println(F("[成功] WiFi 连接稳定!"));
+                Serial.printf("  IP: %s  信号: %d dBm\n\n",
+                              WiFi.localIP().toString().c_str(), WiFi.RSSI());
+                strncpy(g_wifi_ssid, ssid.c_str(), MAX_SSID_LEN);
+                strncpy(g_wifi_pass, pass.c_str(), MAX_PASS_LEN);
+                g_wifi_configured = true;
+                g_wifi_connected = true;
+                eeprom_save_wifi();
+                return;
+            }
+        }
+
+        // 连接失败
+        if (attempt < 3) {
+            Serial.println(F("[失败] 无法连接，请重新输入密码 (q=重选网络, m=主菜单)\n"));
+        } else {
+            Serial.println(F("[失败] 3 次尝试均失败，返回重新扫描\n"));
+            WiFi.disconnect();
+            delay(500);
+            goto scan_start;
+        }
+        WiFi.disconnect();
+        delay(500);
     }
-
-    Serial.printf("正在连接 \"%s\" ...\n", ssid.c_str());
-
-    // 关键修复：禁用 WiFi 睡眠，防止 7 秒断连
-    WiFi.setSleepMode(WIFI_NONE_SLEEP);
-    WiFi.setAutoReconnect(true);
-    WiFi.begin(ssid.c_str(), pass.c_str());
-
-    uint32_t conn_start = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - conn_start < WIFI_CONNECT_TIMEOUT_MS) {
-        delay(200);
-        yield();
-    }
-
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println(F("[失败] 无法连接 WiFi\n"));
-        return;
-    }
-
-    // 连接稳定性验证（5 秒内保持连接）
-    uint32_t stable = millis();
-    bool ok = true;
-    while (millis() - stable < WIFI_STABLE_CHECK_MS) {
-        if (WiFi.status() != WL_CONNECTED) { ok = false; break; }
-        delay(200);
-    }
-    if (!ok) {
-        Serial.println(F("[失败] 连接不稳定\n"));
-        return;
-    }
-
-    Serial.println(F("[成功] WiFi 连接稳定!"));
-    Serial.printf("  IP: %s  信号: %d dBm\n\n",
-                  WiFi.localIP().toString().c_str(), WiFi.RSSI());
-
-    strncpy(g_wifi_ssid, ssid.c_str(), MAX_SSID_LEN);
-    strncpy(g_wifi_pass, pass.c_str(), MAX_PASS_LEN);
-    g_wifi_configured = true;
-    g_wifi_connected = true;
-    eeprom_save_wifi();
 }
 
 /**
