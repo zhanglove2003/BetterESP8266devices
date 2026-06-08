@@ -31,6 +31,7 @@ namespace EepromAddr {
     constexpr uint16_t PASS        = 36;    // WiFi 密码 (64 字节)
     constexpr uint16_t MQTT_SERVER = 100;   // MQTT 服务器地址 (39 字节)
     constexpr uint16_t MQTT_PORT   = 140;  // MQTT 端口, 0x8C (uint16_t)
+    constexpr uint16_t MQTT_USER   = 142;  // MQTT 用户名/Token (32 字节)
 }
 
 #define EEPROM_TOTAL_SIZE   512
@@ -41,15 +42,17 @@ namespace EepromAddr {
 #define MAX_PASS_LEN   64
 #define MAX_HOST_LEN   40
 #define MAX_TOPIC_LEN  40
+#define MAX_MQTT_USER_LEN  32
 
 // ──── MQTT 默认参数 ──────────────────────────────────────
-#define DEFAULT_MQTT_SERVER   "broker.emqx.io"
+#define DEFAULT_MQTT_SERVER   "150.158.19.191"
 #define DEFAULT_MQTT_PORT     1883
-#define DEFAULT_TOPIC_STATUS  "esp8266/status"
-#define DEFAULT_TOPIC_CMD     "esp8266/cmd"
+#define DEFAULT_MQTT_USER     "lmxupyH3ORJVOdoYXEy5"
+#define DEFAULT_TOPIC_STATUS  "v1/devices/me/telemetry"
+#define DEFAULT_TOPIC_CMD     "v1/devices/me/rpc/request/+"
 
 // ──── DNS 降级备用 IP ────────────────────────────────────
-#define MQTT_FALLBACK_IP      "34.243.217.54"
+#define MQTT_FALLBACK_IP      "150.158.19.191"
 
 // ──── 超时与间隔 ──────────────────────────────────────────
 #define WIFI_CONNECT_TIMEOUT_MS    30000   // WiFi 手动连接超时
@@ -58,6 +61,7 @@ namespace EepromAddr {
 #define MQTT_RECONNECT_INTERVAL_MS  10000   // MQTT 断线重连间隔
 #define MQTT_STATUS_INTERVAL_MS     30000   // 状态心跳发布间隔
 #define LED_BLINK_INTERVAL_MS      1000    // LED 闪烁间隔
+#define LED_BLINK_ENABLED           0       // 呼吸灯开关 (0=关闭, 1=开启)
 #define MENU_TIMEOUT_SEC            5       // 菜单自动选择超时
 #define BRIDGE_WAIT_NEXT_CHAR_MS    20      // 桥接协议第二字符等待
 #define BRIDGE_MAX_LINE_LEN         256     // 桥接协议单行最大长度
@@ -77,6 +81,7 @@ extern bool     g_wifi_connected;
 // MQTT 状态
 extern char         g_mqtt_server[MAX_HOST_LEN + 1];
 extern uint16_t     g_mqtt_port;
+extern char         g_mqtt_user[MAX_MQTT_USER_LEN + 1];
 extern char         g_mqtt_topic_sta[MAX_TOPIC_LEN + 1];
 extern char         g_mqtt_topic_cmd[MAX_TOPIC_LEN + 1];
 extern WiFiClient   g_wifi_client;
