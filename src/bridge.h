@@ -77,8 +77,9 @@ inline void handle_bridge_command() {
 
     if (line.startsWith("PUB ")) {
         // 解析 "PUB <topic> <payload>"
-        if (!g_mqtt_connected) {
+        if (!g_mqtt_connected || !g_mqtt_client.connected()) {
             Serial.println(F("<<ERR no mqtt"));
+            g_mqtt_connected = false;
             return;
         }
         char topic[BRIDGE_MAX_TOPIC_LEN];
@@ -87,6 +88,7 @@ inline void handle_bridge_command() {
                                     payload, sizeof(payload));
         if (err == 0) {
             g_mqtt_client.publish(topic, payload);
+            g_mqtt_connected = g_mqtt_client.connected();
             Serial.printf("<<OK PUB %s\n", topic);
         } else {
             Serial.printf("<<ERR parse:%d\n", err);
