@@ -39,6 +39,7 @@ bool     g_wifi_connected  = false;
 // MQTT
 char         g_mqtt_server[MAX_HOST_LEN + 1]   = DEFAULT_MQTT_SERVER;
 uint16_t     g_mqtt_port          = DEFAULT_MQTT_PORT;
+char         g_mqtt_user[MAX_MQTT_USER_LEN + 1] = DEFAULT_MQTT_USER;
 char         g_mqtt_topic_sta[MAX_TOPIC_LEN + 1] = DEFAULT_TOPIC_STATUS;
 char         g_mqtt_topic_cmd[MAX_TOPIC_LEN + 1] = DEFAULT_TOPIC_CMD;
 WiFiClient   g_wifi_client;
@@ -84,30 +85,20 @@ void setup() {
 
     // 加载 MQTT EEPROM 配置
     eeprom_load_mqtt();
+    // 强制同步到当前编译默认值（修复 EEPROM 残留的旧配置）
+    strncpy(g_mqtt_server, DEFAULT_MQTT_SERVER, MAX_HOST_LEN);
+    g_mqtt_port = DEFAULT_MQTT_PORT;
+    strncpy(g_mqtt_user, DEFAULT_MQTT_USER, MAX_MQTT_USER_LEN);
+    eeprom_save_mqtt();
 
-    // 启动菜单
+    // 启动菜单（无超时，等待用户主动选择）
     show_menu();
-    int choice = wait_menu_choice(MENU_TIMEOUT_SEC);
+    int choice = wait_menu_choice();
     handle_menu_choice(choice);
 
-    // 尝试 EEPROM 自动连接（仅在用户未手动连接时）
+    // 尝试 EEPROM 自动连接（仅在用户未手动连接时，且用户未主动跳过过）
     if (!g_wifi_connected && eeprom_load_wifi()) {
-        Serial.println(F("\n发现已保存的 WiFi 凭据, 5 秒内按任意键跳过"));
-        uint32_t t0 = millis();
-        bool skip = false;
-        while (millis() - t0 < 5000) {
-            if (Serial.available()) {
-                skip = true;
-                serial_flush_input();
-                break;
-            }
-            delay(10);
-        }
-        if (!skip) {
-            wifi_auto_connect();
-        } else {
-            Serial.println(F("已跳过\n"));
-        }
+        wifi_auto_connect();
     }
 
     // 连接 MQTT
@@ -116,7 +107,7 @@ void setup() {
         mqtt_connect();
     }
 
-    Serial.println(F(">>> 运行中 (m=菜单 r=重启)"));
+    Serial.println(F(">>> 运行中 (m=菜单 p=发布 r=重启)"));
     Serial.println();
 }
 
@@ -125,13 +116,15 @@ void setup() {
 // ═══════════════════════════════════════════════════════════
 
 void loop() {
-    // LED 心跳闪烁
+    // LED 心跳闪烁（可通过 LED_BLINK_ENABLED 开关）
+    #if LED_BLINK_ENABLED
     unsigned long now = millis();
     if (now - g_last_blink >= LED_BLINK_INTERVAL_MS) {
         g_last_blink = now;
         g_led_state = !g_led_state;
         digitalWrite(LED_PIN, g_led_state ? LED_ON : LED_OFF);
     }
+    #endif
 
     // WiFi + MQTT 维护
     if (g_wifi_connected) {
@@ -149,6 +142,8 @@ void loop() {
         if (g_mqtt_connected && millis() - g_last_status_pub > MQTT_STATUS_INTERVAL_MS) {
             g_last_status_pub = millis();
             mqtt_publish_status();
+            // 关键修复：publish 失败立即清标志位，下一轮自动重连
+            g_mqtt_connected = g_mqtt_client.connected();
         }
     }
 
