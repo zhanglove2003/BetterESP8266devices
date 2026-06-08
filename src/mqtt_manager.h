@@ -65,13 +65,32 @@ inline bool mqtt_connect() {
     WiFi.macAddress(mac);
     snprintf(cid, sizeof(cid), "ESP8266_%02X%02X%02X", mac[3], mac[4], mac[5]);
 
-    if (g_mqtt_client.connect(cid)) {
+    // ThingsBoard 认证：Access Token 作为 username，password 留空
+    // 官方文档：https://thingsboard.io/docs/reference/mqtt-api/
+    // PubSubClient.connect(clientId, username=token, password=null)
+    const char *mqtt_username = g_mqtt_user[0] ? g_mqtt_user : nullptr;
+    if (g_mqtt_client.connect(cid, mqtt_username, nullptr)) {
         g_mqtt_client.subscribe(g_mqtt_topic_cmd);
         g_mqtt_connected = true;
-        Serial.printf("[MQTT] 已连接 %s:%d\n", g_mqtt_server, g_mqtt_port);
+        if (g_mqtt_user[0]) {
+            Serial.printf("[MQTT] 已连接 %s:%d (Token: %s)\n", g_mqtt_server, g_mqtt_port, g_mqtt_user);
+        } else {
+            Serial.printf("[MQTT] 已连接 %s:%d\n", g_mqtt_server, g_mqtt_port);
+        }
+        // 连接后立即发布一条测试遥测，验证端到端连通
+        char test_pl[64];
+        snprintf(test_pl, sizeof(test_pl), "{\"uptime\":0,\"rssi\":%d,\"heap\":%u}",
+                 WiFi.RSSI(), ESP.getFreeHeap());
+        if (g_mqtt_client.publish(g_mqtt_topic_sta, test_pl)) {
+            Serial.printf("[MQTT] 测试遥测已发送 → %s\n", test_pl);
+        } else {
+            Serial.println(F("[MQTT] 测试遥测发送失败！"));
+        }
+        g_mqtt_connected = g_mqtt_client.connected();
         return true;
     }
 
+    Serial.printf("[MQTT] 连接失败 %s:%d 状态码:%d\n", g_mqtt_server, g_mqtt_port, g_mqtt_client.state());
     g_mqtt_connected = false;
     return false;
 }
@@ -82,13 +101,22 @@ inline bool mqtt_connect() {
  * 包含字段：uptime（秒）、rssi（信号强度）、heap（可用堆内存）
  */
 inline void mqtt_publish_status() {
+    // 关键修复：实际连接状态可能与标志位不一致（broker 静默断开），用 connected() 同步
+    g_mqtt_connected = g_mqtt_client.connected();
     if (!g_mqtt_connected) return;
 
     char payload[96];
     snprintf(payload, sizeof(payload),
              "{\"uptime\":%lu,\"rssi\":%d,\"heap\":%u}",
              millis() / 1000, WiFi.RSSI(), ESP.getFreeHeap());
-    g_mqtt_client.publish(g_mqtt_topic_sta, payload);
+
+    bool ok = g_mqtt_client.publish(g_mqtt_topic_sta, payload);
+    if (ok) {
+        Serial.printf("[MQTT] 已发送遥测 → %s\n", payload);
+    } else {
+        Serial.println(F("[MQTT] 遥测发布失败！"));
+    }
+    g_mqtt_connected = g_mqtt_client.connected();
 }
 
 /**
@@ -99,6 +127,9 @@ inline void mqtt_publish_status() {
 inline void mqtt_config_menu() {
     Serial.println();
     Serial.printf("  当前 MQTT: %s:%d\n", g_mqtt_server, g_mqtt_port);
+    if (g_mqtt_user[0]) {
+        Serial.printf("  Token: %s\n", g_mqtt_user);
+    }
     Serial.printf("  发布: %s  订阅: %s\n\n", g_mqtt_topic_sta, g_mqtt_topic_cmd);
     serial_flush_input();
 
@@ -114,6 +145,11 @@ inline void mqtt_config_menu() {
         int p = atoi(buf);
         if (p > 0 && p < 65536) g_mqtt_port = (uint16_t)p;
     }
+
+    Serial.print(F("Access Token > "));
+    memset(buf, 0, sizeof(buf));
+    if (serial_read_line(buf, MAX_MQTT_USER_LEN + 1, 30000) && buf[0])
+        strncpy(g_mqtt_user, buf, MAX_MQTT_USER_LEN);
 
     Serial.print(F("发布主题 > "));
     memset(buf, 0, sizeof(buf));
